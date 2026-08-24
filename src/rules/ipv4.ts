@@ -75,6 +75,45 @@ export function parseCidr(value: string): ParsedCidr | null {
   };
 }
 
+export function isIPv4InCidr(
+  address: string,
+  cidr: ParsedCidr,
+): boolean {
+  const addressOctets = parseIPv4(address);
+  const networkOctets = parseIPv4(cidr.network);
+
+  if (
+    addressOctets === null ||
+    networkOctets === null ||
+    !isValidCidrPrefix(cidr.prefix)
+  ) {
+    return false;
+  }
+
+  const mask =
+    cidr.prefix === 0 ? 0 : (0xffffffff << (32 - cidr.prefix)) >>> 0;
+
+  return (
+    (ipv4ToUint32(addressOctets) & mask) >>> 0
+  ) === ((ipv4ToUint32(networkOctets) & mask) >>> 0);
+}
+
+export function cidrRangesOverlap(
+  left: ParsedCidr,
+  right: ParsedCidr,
+): boolean {
+  if (
+    !isValidCidrPrefix(left.prefix) ||
+    !isValidCidrPrefix(right.prefix)
+  ) {
+    return false;
+  }
+
+  return left.prefix <= right.prefix
+    ? isIPv4InCidr(right.network, left)
+    : isIPv4InCidr(left.network, right);
+}
+
 function ipv4ToUint32(octets: IPv4Octets): number {
   return (
     ((octets[0] << 24) |

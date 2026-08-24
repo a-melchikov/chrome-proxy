@@ -6,7 +6,11 @@ export type AppErrorCode =
   | 'INVALID_PROXY_PORT'
   | 'INVALID_PROXY_ENCODING'
   | 'INVALID_RULE'
-  | 'INVALID_SETTINGS';
+  | 'INVALID_SETTINGS'
+  | 'PROXY_NOT_CONTROLLABLE'
+  | 'PROXY_CONTROLLED_BY_OTHER_EXTENSION'
+  | 'PROXY_APPLY_FAILED'
+  | 'PROXY_CLEAR_FAILED';
 
 export interface AppError {
   code: AppErrorCode;
