@@ -10,7 +10,8 @@ export type AppErrorCode =
   | 'PROXY_NOT_CONTROLLABLE'
   | 'PROXY_CONTROLLED_BY_OTHER_EXTENSION'
   | 'PROXY_APPLY_FAILED'
-  | 'PROXY_CLEAR_FAILED';
+  | 'PROXY_CLEAR_FAILED'
+  | 'PROXY_AUTH_FAILED';
 
 export interface AppError {
   code: AppErrorCode;

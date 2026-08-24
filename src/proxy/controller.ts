@@ -1,4 +1,8 @@
 import type { ProxySettingsV1 } from '../storage/settings';
+import {
+  createProxyAuthContext,
+  type ProxyAuthContextStore,
+} from './auth';
 import type {
   BrowserControlLevel,
   ProxySettingsAdapter,
@@ -18,7 +22,10 @@ export interface ProxyMutationResult {
 }
 
 export class ProxyController {
-  constructor(private readonly adapter: ProxySettingsAdapter) {}
+  constructor(
+    private readonly adapter: ProxySettingsAdapter,
+    private readonly authContext: ProxyAuthContextStore,
+  ) {}
 
   async getControlState(): Promise<ProxyControlState> {
     const snapshot = await this.adapter.get();
@@ -42,11 +49,17 @@ export class ProxyController {
     const controlError = getControlError(control);
 
     if (controlError !== null) {
+      this.authContext.clearContext();
       return controlError;
     }
 
+    this.authContext.clearContext();
+
     try {
       await this.adapter.set(desired.value.config);
+      this.authContext.setContext(
+        createProxyAuthContext(desired.value.parsedProxy, 'enabled-proxy'),
+      );
       return success({ action: 'set', control });
     } catch {
       return failure(
@@ -57,6 +70,7 @@ export class ProxyController {
   }
 
   async disable(): Promise<Result<ProxyMutationResult>> {
+    this.authContext.clearContext();
     const control = await this.getControlState();
     const controlError = getControlError(control);
 

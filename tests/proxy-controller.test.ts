@@ -4,6 +4,10 @@ import type {
   ProxySettingsAdapter,
   ProxySettingsChangeListener,
 } from '../src/proxy/browser-adapter';
+import {
+  ProxyAuthManager,
+  type ProxyAuthContext,
+} from '../src/proxy/auth';
 import type { ProxyConfig } from '../src/proxy/config';
 import {
   mapControlLevel,
@@ -36,7 +40,8 @@ describe('ProxyController', () => {
     ['controlled_by_this_extension', 'owned'],
   ] as const)('sets config when control is %s', async (level, control) => {
     const adapter = new FakeProxyAdapter(level);
-    const controller = new ProxyController(adapter);
+    const authManager = new ProxyAuthManager();
+    const controller = new ProxyController(adapter, authManager);
 
     expect(await controller.applyDesiredSettings(enabledSettings)).toEqual({
       ok: true,
@@ -54,6 +59,13 @@ describe('ProxyController', () => {
         },
       },
     ]);
+    expect(authManager.getContext()).toEqual({
+      host: 'proxy.example.test',
+      port: 8080,
+      username: 'fixture-user',
+      password: 'fixture-pass',
+      source: 'enabled-proxy',
+    });
   });
 
   it.each([
@@ -64,7 +76,9 @@ describe('ProxyController', () => {
     ['not_controllable', 'PROXY_NOT_CONTROLLABLE'],
   ] as const)('does not set when control is %s', async (level, code) => {
     const adapter = new FakeProxyAdapter(level);
-    const controller = new ProxyController(adapter);
+    const authManager = new ProxyAuthManager();
+    authManager.setContext(existingContext);
+    const controller = new ProxyController(adapter, authManager);
     const result = await controller.applyDesiredSettings(enabledSettings);
 
     expect(result.ok).toBe(false);
@@ -74,22 +88,27 @@ describe('ProxyController', () => {
     }
 
     expect(adapter.setCalls).toEqual([]);
+    expect(authManager.getContext()).toBeNull();
   });
 
   it('clears regular proxy settings when disabled', async () => {
     const adapter = new FakeProxyAdapter('controlled_by_this_extension');
-    const controller = new ProxyController(adapter);
+    const authManager = new ProxyAuthManager();
+    authManager.setContext(existingContext);
+    const controller = new ProxyController(adapter, authManager);
 
     expect(await controller.disable()).toEqual({
       ok: true,
       value: { action: 'clear', control: 'owned' },
     });
     expect(adapter.clearCalls).toBe(1);
+    expect(authManager.getContext()).toBeNull();
   });
 
   it('does not mutate Chrome when enabled settings are invalid', async () => {
     const adapter = new FakeProxyAdapter('controllable_by_this_extension');
-    const controller = new ProxyController(adapter);
+    const authManager = new ProxyAuthManager();
+    const controller = new ProxyController(adapter, authManager);
     const result = await controller.applyDesiredSettings({
       ...enabledSettings,
       proxyInput: 'invalid-proxy',
@@ -106,19 +125,37 @@ describe('ProxyController', () => {
     applyAdapter.failSet = true;
     const clearAdapter = new FakeProxyAdapter('controlled_by_this_extension');
     clearAdapter.failClear = true;
+    const applyAuthManager = new ProxyAuthManager();
+    applyAuthManager.setContext(existingContext);
+    const clearAuthManager = new ProxyAuthManager();
+    clearAuthManager.setContext(existingContext);
 
     await expect(
-      new ProxyController(applyAdapter).applyDesiredSettings(enabledSettings),
+      new ProxyController(applyAdapter, applyAuthManager).applyDesiredSettings(
+        enabledSettings,
+      ),
     ).resolves.toMatchObject({
       ok: false,
       error: { code: 'PROXY_APPLY_FAILED' },
     });
-    await expect(new ProxyController(clearAdapter).disable()).resolves.toMatchObject({
+    await expect(
+      new ProxyController(clearAdapter, clearAuthManager).disable(),
+    ).resolves.toMatchObject({
       ok: false,
       error: { code: 'PROXY_CLEAR_FAILED' },
     });
+    expect(applyAuthManager.getContext()).toBeNull();
+    expect(clearAuthManager.getContext()).toBeNull();
   });
 });
+
+const existingContext: ProxyAuthContext = {
+  host: 'old-proxy.example.test',
+  port: 3128,
+  username: 'old-fixture-user',
+  password: 'old-fixture-pass',
+  source: 'enabled-proxy',
+};
 
 class FakeProxyAdapter implements ProxySettingsAdapter {
   readonly setCalls: ProxyConfig[] = [];
