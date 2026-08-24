@@ -22,9 +22,12 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@wxt-dev/module-react": "^1.2.2",
+    "jsdom": "^30.0.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
     "web-ext": "^10.5.0",

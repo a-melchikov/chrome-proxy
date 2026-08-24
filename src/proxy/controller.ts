@@ -8,6 +8,7 @@ import type {
   ProxySettingsAdapter,
 } from './browser-adapter';
 import {
+  buildAllProxyConfig,
   buildDesiredProxyState,
   type DesiredProxyState,
 } from './config';
@@ -17,6 +18,7 @@ import {
   type AppError,
   type Result,
 } from './errors';
+import type { ParsedProxy } from './parser';
 
 export type ProxyControlState =
   | 'available'
@@ -79,6 +81,31 @@ export class ProxyController {
       return failure(
         'PROXY_APPLY_FAILED',
         'Chrome failed to apply the proxy configuration.',
+      );
+    }
+  }
+
+  async applyTemporaryProxy(
+    proxy: ParsedProxy,
+  ): Promise<Result<ProxyMutationResult>> {
+    const control = await this.getControlState();
+    const controlError = getProxyControlError(control);
+
+    if (controlError !== null) {
+      this.authContext.clearContext();
+      return { ok: false, error: controlError };
+    }
+
+    try {
+      await this.adapter.set(buildAllProxyConfig(proxy));
+      this.authContext.setContext(
+        createProxyAuthContext(proxy, 'temporary-test'),
+      );
+      return success({ action: 'set', control });
+    } catch {
+      return failure(
+        'PROXY_APPLY_FAILED',
+        'Chrome failed to apply the temporary proxy configuration.',
       );
     }
   }

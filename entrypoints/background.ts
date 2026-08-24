@@ -3,7 +3,9 @@ import { registerProxyAuthHandler } from '../src/proxy/auth-listener';
 import { ProxyAuthManager } from '../src/proxy/auth';
 import { createBrowserProxyAdapter } from '../src/proxy/browser-adapter';
 import { ProxyController } from '../src/proxy/controller';
+import { createConnectionProbe } from '../src/proxy/tester';
 import { ExtensionRuntime } from '../src/runtime/extension-runtime';
+import { createBrowserRecoveryRepository } from '../src/storage/recovery';
 import { createBrowserSettingsRepository } from '../src/storage/settings';
 
 export default defineBackground(() => {
@@ -14,6 +16,8 @@ export default defineBackground(() => {
     settingsRepository: createBrowserSettingsRepository(),
     proxyController,
     authContext: authManager,
+    recoveryRepository: createBrowserRecoveryRepository(),
+    connectionProbe: createConnectionProbe(),
   });
 
   registerRuntimeMessageHandler(runtime);

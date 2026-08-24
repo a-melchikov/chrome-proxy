@@ -331,7 +331,7 @@ describe('runtime messaging contract', () => {
     });
   });
 
-  it('rejects malformed messages and reserves TEST_CONNECTION', async () => {
+  it('rejects malformed messages and handles TEST_CONNECTION', async () => {
     const harness = createHarness(success({ ...DEFAULT_PROXY_SETTINGS }));
 
     await expect(handleRuntimeMessage(harness.runtime, null)).resolves.toEqual({
@@ -345,7 +345,7 @@ describe('runtime messaging contract', () => {
       handleRuntimeMessage(harness.runtime, { type: 'TEST_CONNECTION' }),
     ).resolves.toMatchObject({
       ok: false,
-      error: { code: 'CONNECTION_TEST_NOT_AVAILABLE' },
+      error: { code: 'PROXY_NOT_CONFIGURED' },
     });
   });
 });

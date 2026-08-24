@@ -15,6 +15,7 @@ export interface ExtensionState {
   effectiveEnabled: boolean;
   control: ProxyControlState;
   applyStatus: ProxyApplyStatus;
+  testInProgress: boolean;
   warnings: ProxyConfigWarning[];
   lastError?: SerializedAppError;
 }
@@ -25,6 +26,7 @@ export function createInitialExtensionState(): ExtensionState {
     effectiveEnabled: false,
     control: 'available',
     applyStatus: 'idle',
+    testInProgress: false,
     warnings: [],
   };
 }

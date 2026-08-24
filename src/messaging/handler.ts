@@ -1,11 +1,11 @@
 import { browser } from 'wxt/browser';
 import type { ExtensionRuntime } from '../runtime/extension-runtime';
-import type { StateApiResponse } from './protocol';
+import type { RuntimeApiResponse, StateApiResponse } from './protocol';
 
 export async function handleRuntimeMessage(
   runtime: ExtensionRuntime,
   message: unknown,
-): Promise<StateApiResponse> {
+): Promise<RuntimeApiResponse> {
   if (!isRecord(message) || typeof message.type !== 'string') {
     return invalidMessage();
   }
@@ -20,13 +20,7 @@ export async function handleRuntimeMessage(
         : { ok: false, error: updated.error };
     }
     case 'TEST_CONNECTION':
-      return {
-        ok: false,
-        error: {
-          code: 'CONNECTION_TEST_NOT_AVAILABLE',
-          message: 'Connection testing is not available yet.',
-        },
-      };
+      return runtime.testConnection();
     default:
       return invalidMessage();
   }
@@ -51,7 +45,7 @@ export function registerRuntimeMessageHandler(runtime: ExtensionRuntime): void {
   });
 }
 
-function invalidMessage(): StateApiResponse {
+function invalidMessage(): RuntimeApiResponse {
   return {
     ok: false,
     error: {
