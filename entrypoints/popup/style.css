@@ -196,11 +196,25 @@ h2,
 }
 
 .field-error,
-.control-warning {
+.control-warning,
+.rule-warning {
   margin-top: 6px;
   color: #a92323;
   font-size: 11px;
   line-height: 1.4;
+}
+
+.rules-helper {
+  margin-top: 6px;
+  color: #687387;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.rule-warning {
+  border-left: 3px solid #d97706;
+  color: #7a4300;
+  padding-left: 8px;
 }
 
 .control-warning {
@@ -271,6 +285,26 @@ h2,
   font-weight: 650;
 }
 
+.secondary-button {
+  min-height: 32px;
+  margin-top: 8px;
+  border: 1px solid #b9c2d0;
+  border-radius: 7px;
+  background: #f7f8fa;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #eef1f5;
+}
+
+.secondary-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .primary-button:hover:not(:disabled) {
   background: #1d4ed8;
 }
@@ -310,12 +344,17 @@ h2,
   }
 
   .text-control,
-  .icon-button {
+  .icon-button,
+  .secondary-button {
     border-color: #465064;
     background: #202734;
   }
 
   .icon-button:hover {
+    background: #293243;
+  }
+
+  .secondary-button:hover:not(:disabled) {
     background: #293243;
   }
 
@@ -326,11 +365,13 @@ h2,
   .connection-status span,
   .request-error span,
   .saving,
-  .loading {
+  .loading,
+  .rules-helper {
     color: #aeb8c8;
   }
 
-  .control-warning {
+  .control-warning,
+  .rule-warning {
     color: #f5b95f;
   }
 

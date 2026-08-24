@@ -260,6 +260,195 @@ describe('popup settings controls', () => {
   });
 });
 
+describe('popup site routing', () => {
+  it('keeps the old authoritative rules when a URL draft is invalid', async () => {
+    const state = createState({
+      ...disabledState.settings,
+      routingMode: 'bypass',
+      rulesText: 'old.example',
+    });
+    const client = createClient({ state });
+    render(<App client={client} />);
+    const rules = (await screen.findByLabelText(
+      'Не использовать proxy для',
+    )) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+
+    fireEvent.change(rules, {
+      target: { value: 'old.example\nhttps://example.com/path' },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    });
+
+    expect(client.updateSettings).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Строка 2: URL is not supported',
+    );
+    expect(rules.value).toBe('old.example\nhttps://example.com/path');
+
+    fireEvent.change(screen.getByLabelText('Режим маршрутизации'), {
+      target: { value: 'allowlist' },
+    });
+    expect(client.updateSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ rulesText: 'old.example' }),
+    );
+  });
+
+  it('adds the exact current HTTPS hostname and persists it canonically', async () => {
+    const state = createState({
+      ...disabledState.settings,
+      routingMode: 'bypass',
+      rulesText: '',
+    });
+    const client = createClient({
+      state,
+      activeTabUrl: 'https://Docs.GitHub.com/en/rest?q=1',
+    });
+    render(<App client={client} />);
+    const rules = (await screen.findByLabelText(
+      'Не использовать proxy для',
+    )) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '+ Текущий сайт' }));
+      await Promise.resolve();
+    });
+
+    expect(client.getActiveTabUrl).toHaveBeenCalledTimes(1);
+    expect(rules.value).toBe('docs.github.com');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    });
+    expect(client.updateSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ rulesText: 'docs.github.com' }),
+    );
+  });
+
+  it('normalizes a wildcard and does not duplicate the current hostname', async () => {
+    const state = createState({
+      ...disabledState.settings,
+      routingMode: 'allowlist',
+      rulesText: 'github.com',
+    });
+    const client = createClient({
+      state,
+      activeTabUrl: 'https://github.com/openai',
+    });
+    render(<App client={client} />);
+    const rules = (await screen.findByLabelText(
+      'Использовать proxy только для',
+    )) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+
+    fireEvent.change(rules, { target: { value: '*.github.com' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '+ Текущий сайт' }));
+      await Promise.resolve();
+    });
+
+    expect(rules.value).toBe('github.com');
+    expect(rules.value.split('\n')).toHaveLength(1);
+  });
+
+  it('rejects chrome pages without changing the rules', async () => {
+    const state = createState({
+      ...disabledState.settings,
+      routingMode: 'bypass',
+      rulesText: 'existing.example',
+    });
+    const client = createClient({
+      state,
+      activeTabUrl: 'chrome://extensions',
+    });
+    render(<App client={client} />);
+    const rules = (await screen.findByLabelText(
+      'Не использовать proxy для',
+    )) as HTMLTextAreaElement;
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '+ Текущий сайт' }));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Текущую вкладку нельзя добавить',
+    );
+    expect(rules.value).toBe('existing.example');
+    expect(client.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('hides the current-site action in all-sites mode', async () => {
+    const client = createClient({ state: disabledState });
+    render(<App client={client} />);
+
+    await screen.findByLabelText('Режим маршрутизации');
+    expect(
+      screen.queryByRole('button', { name: '+ Текущий сайт' }),
+    ).toBeNull();
+  });
+
+  it('warns when an allowlist is empty', async () => {
+    const client = createClient({
+      state: createState({
+        ...disabledState.settings,
+        routingMode: 'allowlist',
+        rulesText: '',
+      }),
+    });
+    render(<App client={client} />);
+
+    expect(
+      await screen.findByText(
+        'Список пуст — все сайты будут открываться напрямую.',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('accepts an empty bypass list without an empty-list warning', async () => {
+    const client = createClient({
+      state: createState({
+        ...disabledState.settings,
+        routingMode: 'bypass',
+        rulesText: '',
+      }),
+    });
+    render(<App client={client} />);
+
+    const rules = (await screen.findByLabelText(
+      'Не использовать proxy для',
+    )) as HTMLTextAreaElement;
+    expect(rules.value).toBe('');
+    expect(
+      screen.queryByText(
+        'Список пуст — все сайты будут открываться напрямую.',
+      ),
+    ).toBeNull();
+  });
+
+  it('shows a non-blocking loopback warning for a valid allowlist', async () => {
+    const client = createClient({
+      state: createState({
+        ...disabledState.settings,
+        routingMode: 'allowlist',
+        rulesText: 'localhost\n127.0.0.1\n169.254.10.1',
+      }),
+    });
+    render(<App client={client} />);
+
+    expect(
+      await screen.findByText(/Chrome может обходить proxy/),
+    ).not.toBeNull();
+    expect(
+      screen
+        .getByLabelText('Использовать proxy только для')
+        .getAttribute('aria-invalid'),
+    ).toBe('false');
+  });
+});
+
 describe('popup connection state', () => {
   it('renders successful latency and IP result', async () => {
     const test = createDeferred<ConnectionTestResult>();
@@ -331,6 +520,8 @@ interface ClientOptions {
   getState?: PopupClient['getState'];
   updateSettings?: PopupClient['updateSettings'];
   testConnection?: PopupClient['testConnection'];
+  getActiveTabUrl?: PopupClient['getActiveTabUrl'];
+  activeTabUrl?: string | null;
   testResult?: ConnectionTestResult;
 }
 
@@ -355,8 +546,15 @@ function createClient(options: ClientOptions) {
           ip: '203.0.113.1',
         }),
   );
+  const getActiveTabUrl = vi.fn<PopupClient['getActiveTabUrl']>(
+    options.getActiveTabUrl ??
+      (async () =>
+        options.activeTabUrl === undefined
+          ? 'https://example.test/'
+          : options.activeTabUrl),
+  );
 
-  return { getState, updateSettings, testConnection };
+  return { getState, updateSettings, testConnection, getActiveTabUrl };
 }
 
 function createEmptyState(): ExtensionState {

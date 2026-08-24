@@ -1,6 +1,6 @@
 import { failure, success, type Result } from '../proxy/errors';
 import { canonicalizeHost } from './hostname';
-import { parseCidr } from './ipv4';
+import { isValidCidrPrefix, parseCidr, parseIPv4 } from './ipv4';
 
 export type Rule =
   | { type: 'hostname'; value: string }
@@ -35,11 +35,41 @@ export function parseRules(input: string): Result<ParsedRules> {
 }
 
 function parseRule(value: string, line: number): Result<Rule> {
+  if (/^[a-z][a-z\d+.-]*:\/\//iu.test(value)) {
+    return invalidRule(
+      line,
+      'URL is not supported; enter only a hostname.',
+    );
+  }
+
   if (value.includes('/')) {
     const cidr = parseCidr(value);
 
     if (cidr === null) {
-      return invalidRule(line);
+      const [address = '', rawPrefix = ''] = value.split('/');
+
+      if (canonicalizeHost(address)?.type === 'hostname') {
+        return invalidRule(
+          line,
+          'Paths are not supported; enter only a hostname.',
+        );
+      }
+
+      if (
+        parseIPv4(address) !== null &&
+        (!/^\d+$/u.test(rawPrefix) ||
+          !isValidCidrPrefix(Number(rawPrefix)))
+      ) {
+        return invalidRule(
+          line,
+          'IPv4 CIDR prefix must be an integer from 0 to 32.',
+        );
+      }
+
+      return invalidRule(
+        line,
+        'CIDR rule must contain a valid IPv4 address and prefix.',
+      );
     }
 
     return success({
@@ -53,22 +83,30 @@ function parseRule(value: string, line: number): Result<Rule> {
   const withoutWildcard = hasWildcard ? value.slice(2) : value;
 
   if (withoutWildcard.length === 0 || withoutWildcard.includes('*')) {
-    return invalidRule(line);
+    return invalidRule(
+      line,
+      'Wildcard is supported only as a leading *.hostname prefix.',
+    );
   }
 
   const host = canonicalizeHost(withoutWildcard);
 
   if (host === null) {
-    return invalidRule(line);
+    return invalidRule(
+      line,
+      value.includes(':')
+        ? 'Site ports and IPv6 addresses are not supported.'
+        : 'Enter a valid hostname or IPv4 address.',
+    );
   }
 
   if (hasWildcard && host.type !== 'hostname') {
-    return invalidRule(line);
+    return invalidRule(line, 'Wildcard is supported only for hostnames.');
   }
 
   return success(host);
 }
 
-function invalidRule(line: number): Result<never> {
-  return failure('INVALID_RULE', `Rule on line ${line} is invalid.`, { line });
+function invalidRule(line: number, message: string): Result<never> {
+  return failure('INVALID_RULE', message, { line });
 }

@@ -7,6 +7,7 @@ export interface PopupClient {
   getState(): Promise<StateApiResponse>;
   updateSettings(settings: ProxySettingsV1): Promise<StateApiResponse>;
   testConnection(): Promise<ConnectionTestResult>;
+  getActiveTabUrl(): Promise<string | null>;
 }
 
 export function createBrowserPopupClient(): PopupClient {
@@ -29,6 +30,13 @@ export function createBrowserPopupClient(): PopupClient {
         type: 'TEST_CONNECTION',
       });
       return response as ConnectionTestResult;
+    },
+    async getActiveTabUrl() {
+      const tabs = await browser.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+      return tabs[0]?.url ?? null;
     },
   };
 }

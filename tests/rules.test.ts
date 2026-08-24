@@ -55,9 +55,8 @@ describe('rule parsing and normalization', () => {
     expect(result.ok).toBe(false);
 
     if (!result.ok) {
-      expect(result.error).toEqual({
+      expect(result.error).toMatchObject({
         code: 'INVALID_RULE',
-        message: 'Rule on line 1 is invalid.',
         line: 1,
       });
       expect(result.error.message).not.toContain(rule);
@@ -73,9 +72,29 @@ describe('rule parsing and normalization', () => {
       ok: false,
       error: {
         code: 'INVALID_RULE',
-        message: 'Rule on line 4 is invalid.',
+        message: 'Site ports and IPv6 addresses are not supported.',
         line: 4,
       },
+    });
+  });
+
+  it.each([
+    [
+      'https://example.com',
+      'URL is not supported; enter only a hostname.',
+    ],
+    [
+      'example.com/path',
+      'Paths are not supported; enter only a hostname.',
+    ],
+    [
+      '192.168.0.1/33',
+      'IPv4 CIDR prefix must be an integer from 0 to 32.',
+    ],
+  ])('returns a safe reason for invalid rule %s', (rule, message) => {
+    expect(parseRules(rule)).toEqual({
+      ok: false,
+      error: { code: 'INVALID_RULE', message, line: 1 },
     });
   });
 

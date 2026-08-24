@@ -10,6 +10,7 @@ import type { AppError } from '../../src/proxy/errors';
 import { maskProxyInput } from '../../src/proxy/mask';
 import { parseProxyInput } from '../../src/proxy/parser';
 import type { ConnectionTestResult } from '../../src/proxy/tester';
+import { getAllowlistWarnings } from '../../src/proxy/warnings';
 import { normalizeRules } from '../../src/rules/normalizer';
 import type { ExtensionState } from '../../src/runtime/state';
 import type {
@@ -20,6 +21,11 @@ import {
   createBrowserPopupClient,
   type PopupClient,
 } from '../../src/ui/popup-client';
+import {
+  CURRENT_SITE_UNAVAILABLE_MESSAGE,
+  extractCurrentSiteHostname,
+  type CurrentSiteResult,
+} from '../../src/ui/current-site';
 
 export const AUTOSAVE_DELAY_MS = 300;
 
@@ -38,6 +44,10 @@ function App({ client = browserClient }: AppProps) {
   const [proxyEditing, setProxyEditing] = useState(false);
   const [proxyRevealed, setProxyRevealed] = useState(false);
   const [rulesError, setRulesError] = useState<AppError | null>(null);
+  const [currentSiteError, setCurrentSiteError] = useState<
+    Extract<CurrentSiteResult, { ok: false }>['error'] | null
+  >(null);
+  const [currentSitePending, setCurrentSitePending] = useState(false);
   const [requestError, setRequestError] = useState<AppError | null>(null);
   const [loadingError, setLoadingError] = useState<AppError | null>(null);
   const [mutationPending, setMutationPending] = useState(false);
@@ -48,6 +58,7 @@ function App({ client = browserClient }: AppProps) {
   const mountedRef = useRef(false);
   const requestSequenceRef = useRef(0);
   const desiredSettingsRef = useRef<ProxySettingsV1 | null>(null);
+  const rulesDraftRef = useRef('');
   const proxyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rulesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -81,6 +92,7 @@ function App({ client = browserClient }: AppProps) {
     }
 
     if (syncDrafts.rules) {
+      rulesDraftRef.current = nextState.settings.rulesText;
       setRulesDraft(nextState.settings.rulesText);
       setRulesError(null);
     }
@@ -257,6 +269,7 @@ function App({ client = browserClient }: AppProps) {
   function handleModeChange(event: ChangeEvent<HTMLSelectElement>): void {
     const routingMode = event.target.value as RoutingMode;
     setModeDraft(routingMode);
+    setCurrentSiteError(null);
     invalidatePendingResponse();
 
     if (desiredSettingsRef.current === null) {
@@ -271,9 +284,17 @@ function App({ client = browserClient }: AppProps) {
   }
 
   function handleRulesChange(event: ChangeEvent<HTMLTextAreaElement>): void {
-    const value = event.target.value;
+    updateRulesDraft(event.target.value, false);
+  }
+
+  function updateRulesDraft(
+    value: string,
+    canonicalizeVisibleText: boolean,
+  ): void {
+    rulesDraftRef.current = value;
     setRulesDraft(value);
     invalidatePendingResponse();
+    setCurrentSiteError(null);
 
     if (rulesTimerRef.current !== null) {
       clearTimeout(rulesTimerRef.current);
@@ -288,6 +309,11 @@ function App({ client = browserClient }: AppProps) {
 
     setRulesError(null);
 
+    if (canonicalizeVisibleText) {
+      rulesDraftRef.current = normalized.value.text;
+      setRulesDraft(normalized.value.text);
+    }
+
     if (desiredSettingsRef.current === null) {
       return;
     }
@@ -299,6 +325,47 @@ function App({ client = browserClient }: AppProps) {
     rulesTimerRef.current = setTimeout(() => {
       void sendSettings({ proxy: false, rules: true, mode: false });
     }, AUTOSAVE_DELAY_MS);
+  }
+
+  async function handleAddCurrentSite(): Promise<void> {
+    if (currentSitePending || modeDraft === 'all') {
+      return;
+    }
+
+    setCurrentSitePending(true);
+    setCurrentSiteError(null);
+
+    try {
+      const tabUrl = await client.getActiveTabUrl();
+      const currentSite = extractCurrentSiteHostname(tabUrl);
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      if (!currentSite.ok) {
+        setCurrentSiteError(currentSite.error);
+        return;
+      }
+
+      const currentRules = rulesDraftRef.current;
+      const combined =
+        currentRules.trim().length === 0
+          ? currentSite.hostname
+          : `${currentRules}\n${currentSite.hostname}`;
+      updateRulesDraft(combined, true);
+    } catch {
+      if (mountedRef.current) {
+        setCurrentSiteError({
+          code: 'CURRENT_SITE_UNAVAILABLE',
+          message: CURRENT_SITE_UNAVAILABLE_MESSAGE,
+        });
+      }
+    } finally {
+      if (mountedRef.current) {
+        setCurrentSitePending(false);
+      }
+    }
   }
 
   async function handleConnectionTest(): Promise<void> {
@@ -357,6 +424,15 @@ function App({ client = browserClient }: AppProps) {
     proxyTouched && !proxyValidation.ok ? proxyValidation.error : null;
   const stateError =
     state.applyStatus === 'error' ? (state.lastError ?? null) : null;
+  const normalizedRulesDraft = normalizeRules(rulesDraft);
+  const emptyAllowlist =
+    modeDraft === 'allowlist' &&
+    normalizedRulesDraft.ok &&
+    normalizedRulesDraft.value.rules.length === 0;
+  const hasLoopbackWarning =
+    modeDraft === 'allowlist' &&
+    normalizedRulesDraft.ok &&
+    getAllowlistWarnings(normalizedRulesDraft.value.rules).length > 0;
 
   return (
     <main className="popup-shell">
@@ -448,11 +524,40 @@ function App({ client = browserClient }: AppProps) {
             spellCheck={false}
             value={rulesDraft}
           />
+          <p className="rules-helper">
+            Одна запись на строку: hostname, IPv4 или IPv4 CIDR.
+            <br />
+            example.com включает сам домен и его поддомены.
+          </p>
           {rulesError === null ? null : (
             <p className="field-error" id="rules-error" role="alert">
               {rulesError.line === undefined
                 ? rulesError.message
                 : `Строка ${rulesError.line}: ${rulesError.message}`}
+            </p>
+          )}
+          {emptyAllowlist ? (
+            <p className="rule-warning" role="status">
+              Список пуст — все сайты будут открываться напрямую.
+            </p>
+          ) : null}
+          {hasLoopbackWarning ? (
+            <p className="rule-warning" role="status">
+              Chrome может обходить proxy для localhost/link-local адресов
+              независимо от PAC.
+            </p>
+          ) : null}
+          <button
+            className="secondary-button"
+            disabled={currentSitePending}
+            onClick={() => void handleAddCurrentSite()}
+            type="button"
+          >
+            {currentSitePending ? 'Добавление…' : '+ Текущий сайт'}
+          </button>
+          {currentSiteError === null ? null : (
+            <p className="field-error" role="alert">
+              {currentSiteError.message}
             </p>
           )}
         </section>
