@@ -4,6 +4,7 @@ import {
   DEFAULT_PROXY_SETTINGS,
   SETTINGS_STORAGE_KEY,
   loadSettings,
+  loadSettingsResult,
   saveSettings,
   updateSettings,
   validateSettings,
@@ -123,5 +124,20 @@ describe('settings repository', () => {
     });
 
     expect(await loadSettings()).toEqual(DEFAULT_PROXY_SETTINGS);
+  });
+
+  it('exposes malformed persisted data to startup reconciliation as an error', async () => {
+    await fakeBrowser.storage.local.set({
+      [SETTINGS_STORAGE_KEY]: {
+        ...DEFAULT_PROXY_SETTINGS,
+        enabled: true,
+        proxyInput: 'not-a-proxy',
+      },
+    });
+
+    await expect(loadSettingsResult()).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_PROXY_FORMAT' },
+    });
   });
 });

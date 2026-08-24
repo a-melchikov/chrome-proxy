@@ -7,8 +7,16 @@ import type {
   BrowserControlLevel,
   ProxySettingsAdapter,
 } from './browser-adapter';
-import { buildDesiredProxyState } from './config';
-import { failure, success, type Result } from './errors';
+import {
+  buildDesiredProxyState,
+  type DesiredProxyState,
+} from './config';
+import {
+  failure,
+  success,
+  type AppError,
+  type Result,
+} from './errors';
 
 export type ProxyControlState =
   | 'available'
@@ -41,24 +49,30 @@ export class ProxyController {
       return desired;
     }
 
-    if (desired.value.kind === 'disabled') {
+    return this.applyDesiredState(desired.value);
+  }
+
+  async applyDesiredState(
+    desired: DesiredProxyState,
+  ): Promise<Result<ProxyMutationResult>> {
+    if (desired.kind === 'disabled') {
       return this.disable();
     }
 
     const control = await this.getControlState();
-    const controlError = getControlError(control);
+    const controlError = getProxyControlError(control);
 
     if (controlError !== null) {
       this.authContext.clearContext();
-      return controlError;
+      return { ok: false, error: controlError };
     }
 
     this.authContext.clearContext();
 
     try {
-      await this.adapter.set(desired.value.config);
+      await this.adapter.set(desired.config);
       this.authContext.setContext(
-        createProxyAuthContext(desired.value.parsedProxy, 'enabled-proxy'),
+        createProxyAuthContext(desired.parsedProxy, 'enabled-proxy'),
       );
       return success({ action: 'set', control });
     } catch {
@@ -71,20 +85,23 @@ export class ProxyController {
 
   async disable(): Promise<Result<ProxyMutationResult>> {
     this.authContext.clearContext();
-    const control = await this.getControlState();
-    const controlError = getControlError(control);
-
-    if (controlError !== null) {
-      return controlError;
-    }
 
     try {
       await this.adapter.clear();
-      return success({ action: 'clear', control });
     } catch {
       return failure(
         'PROXY_CLEAR_FAILED',
         'Chrome failed to clear the proxy configuration.',
+      );
+    }
+
+    try {
+      const control = await this.getControlState();
+      return success({ action: 'clear', control });
+    } catch {
+      return failure(
+        'PROXY_CONTROL_STATE_FAILED',
+        'Chrome proxy control state could not be read.',
       );
     }
   }
@@ -105,22 +122,22 @@ export function mapControlLevel(
   }
 }
 
-function getControlError(
+export function getProxyControlError(
   control: ProxyControlState,
-): Result<never> | null {
+): AppError | null {
   switch (control) {
     case 'available':
     case 'owned':
       return null;
     case 'controlled-by-other-extension':
-      return failure(
-        'PROXY_CONTROLLED_BY_OTHER_EXTENSION',
-        'Proxy settings are controlled by another extension.',
-      );
+      return {
+        code: 'PROXY_CONTROLLED_BY_OTHER_EXTENSION',
+        message: 'Proxy settings are controlled by another extension.',
+      };
     case 'not-controllable':
-      return failure(
-        'PROXY_NOT_CONTROLLABLE',
-        'Proxy settings cannot be controlled by this extension.',
-      );
+      return {
+        code: 'PROXY_NOT_CONTROLLABLE',
+        message: 'Proxy settings cannot be controlled by this extension.',
+      };
   }
 }

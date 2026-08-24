@@ -105,6 +105,23 @@ describe('ProxyController', () => {
     expect(authManager.getContext()).toBeNull();
   });
 
+  it('clears its own setting even when another extension has precedence', async () => {
+    const adapter = new FakeProxyAdapter('controlled_by_other_extensions');
+    const authManager = new ProxyAuthManager();
+    authManager.setContext(existingContext);
+    const controller = new ProxyController(adapter, authManager);
+
+    expect(await controller.disable()).toEqual({
+      ok: true,
+      value: {
+        action: 'clear',
+        control: 'controlled-by-other-extension',
+      },
+    });
+    expect(adapter.clearCalls).toBe(1);
+    expect(authManager.getContext()).toBeNull();
+  });
+
   it('does not mutate Chrome when enabled settings are invalid', async () => {
     const adapter = new FakeProxyAdapter('controllable_by_this_extension');
     const authManager = new ProxyAuthManager();

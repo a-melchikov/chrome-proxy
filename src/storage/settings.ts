@@ -22,6 +22,11 @@ export type ProxySettingsUpdate = Partial<
   Omit<ProxySettingsV1, 'version'>
 >;
 
+export interface SettingsRepository {
+  load(): Promise<Result<ProxySettingsV1>>;
+  save(settings: ProxySettingsV1): Promise<Result<ProxySettingsV1>>;
+}
+
 export const SETTINGS_STORAGE_KEY = 'settings';
 
 export const DEFAULT_PROXY_SETTINGS: Readonly<ProxySettingsV1> = Object.freeze({
@@ -85,26 +90,21 @@ export function validateSettings(value: unknown): Result<ProxySettingsV1> {
 }
 
 export async function loadSettings(): Promise<ProxySettingsV1> {
-  const stored = await browser.storage.local.get(SETTINGS_STORAGE_KEY);
-  const validated = validateSettings(stored[SETTINGS_STORAGE_KEY]);
+  const loaded = await loadSettingsResult();
 
-  return validated.ok ? validated.value : createDefaultSettings();
+  return loaded.ok ? loaded.value : createDefaultSettings();
 }
 
 export async function saveSettings(
   settings: ProxySettingsV1,
 ): Promise<ProxySettingsV1> {
-  const validated = validateSettings(settings);
+  const saved = await saveSettingsResult(settings);
 
-  if (!validated.ok) {
-    throw new AppValidationError(validated.error);
+  if (!saved.ok) {
+    throw new AppValidationError(saved.error);
   }
 
-  await browser.storage.local.set({
-    [SETTINGS_STORAGE_KEY]: validated.value,
-  });
-
-  return validated.value;
+  return saved.value;
 }
 
 export async function updateSettings(
@@ -117,6 +117,55 @@ export async function updateSettings(
     ...update,
     version: 1,
   });
+}
+
+export function createBrowserSettingsRepository(): SettingsRepository {
+  return {
+    load: loadSettingsResult,
+    save: saveSettingsResult,
+  };
+}
+
+export async function loadSettingsResult(): Promise<Result<ProxySettingsV1>> {
+  let stored: Record<string, unknown>;
+
+  try {
+    stored = await browser.storage.local.get(SETTINGS_STORAGE_KEY);
+  } catch {
+    return failure(
+      'SETTINGS_LOAD_FAILED',
+      'Chrome failed to load proxy settings.',
+    );
+  }
+
+  const value = stored[SETTINGS_STORAGE_KEY];
+
+  return value === undefined
+    ? success(createDefaultSettings())
+    : validateSettings(value);
+}
+
+export async function saveSettingsResult(
+  settings: ProxySettingsV1,
+): Promise<Result<ProxySettingsV1>> {
+  const validated = validateSettings(settings);
+
+  if (!validated.ok) {
+    return validated;
+  }
+
+  try {
+    await browser.storage.local.set({
+      [SETTINGS_STORAGE_KEY]: validated.value,
+    });
+  } catch {
+    return failure(
+      'SETTINGS_SAVE_FAILED',
+      'Chrome failed to save proxy settings.',
+    );
+  }
+
+  return validated;
 }
 
 function createDefaultSettings(): ProxySettingsV1 {
